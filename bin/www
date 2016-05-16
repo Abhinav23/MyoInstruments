@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+var debug = require('debug')('my-application');
+var app = require('../app');
+var MyoIO = require('../myo/myo');
+var myoInstance;
+var currentSocket = null;
+
+var devices = [];
+
+app.set('port', process.env.PORT || 3000);
+
+var server = app.listen(app.get('port'), function() {
+  debug('Express server listening on port ' + server.address().port);
+  myoInstance = new MyoIO(ServerCallbacks, true);
+});
+
+var io = require('socket.io')(server);
+
+io.on('connection',function(socket){
+
+  socket.on('awaiting-position', function() {
+    devices.push({z: 0, socket: socket});
+    currentSocket = socket;
+
+    myoInstance.awaitPosition();
+    console.log('waiting for position for device: ' + socket.id);
+  });
+
+  socket.on('disconnect', function(){
+    var i;
+    for (i = 0; i < devices.length; i++){
+      if (socket.id === devices[i].socket.id)
+        break;
+    }
+    devices = devices.splice(i,1);
+    myoInstance.setDevices(devices);
+  });
+});
+
+var addDevice = function(z) {
+  var dev = devices[devices.length-1];
+  dev.z = z;
+  devices[devices.length-1] = dev; //set position of last added device (since only one is handled at time) -- FIX THIS HACK LATER
+  myoInstance.setDevices(devices);
+  currentSocket.emit('position-received');
+};
+
+var increaseVolume = function(socket) {
+  socket.emit('increase-volume');
+}
+
+var decreaseVolume = function(socket) {
+  socket.emit('decrease-volume');
+}
+
+var increaseTempo = function(socket) {
+  socket.emit('increase-tempo');
+}
+
+var decreaseTempo = function(socket) {
+  socket.emit('decrease-tempo');
+}
+
+var heartbeat = function(socket) {
+  socket.emit('current-device');
+}
+
+var emitAll = function(message) {
+  for (var i in devices) {
+    var d = devices[i];
+    d.socket.emit(message);
+  }
+}
+
+var ServerCallbacks = {
+  addDevice: addDevice,
+  increaseVolume: increaseVolume,
+  decreaseVolume: decreaseVolume,
+  increaseTempo: increaseTempo,
+  decreaseTempo: decreaseTempo,
+  emitAll: emitAll,
+  heartbeat: heartbeat //TODO: Implement heartbeat in MyoIO
+};
